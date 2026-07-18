@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lumi — учи французский через диалоги</title>
+<!--
+  Прототип приложения Lumi.
+  Структурированные сцены, упражнения, мини-игры, избранное, разговорник,
+  озвучка через Web Speech API — работают полностью на клиенте.
+
+  Живой чат с Люми (свободная болтовня, "объясни грамматику") ходит на
+  внешний сервер, заданный в CONFIG.apiBase ниже. Этот сервер — отдельный
+  проект (см. server.js), он держит API-ключ и проксирует запросы к
+  Anthropic API. Пока CONFIG.apiBase пустая строка — эти функции честно
+  показывают, что нужно подключить бэкенд, вместо того чтобы притворяться,
+  что работают.
+-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+:root{
+  --surface-0:#F7F5F2; --surface-1:#ffffff; --surface-2:#F1EEE9;
+  --text-primary:#1F1B16; --text-secondary:#6B655C;
+  --border:#E4DFD6; --border-strong:#D6CFC2;
+  --brand:#FF6452; --brand-soft:#FFE4DE; --brand-text:#B23A28;
+  --sky:#DCEEFB; --water:#AEDCF2; --sun:#FFD37A; --ice:#F3F6F7;
+  --seal:#5B7C99; --seal2:#8C6E63; --belly:#EAF1F5; --spot:#3F5A72;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface-0:#15130F; --surface-1:#1E1B16; --surface-2:#26221C;
+    --text-primary:#F3F0EA; --text-secondary:#A79E90;
+    --border:#3A342C; --border-strong:#4A4438;
+    --brand:#FF8770; --brand-soft:#4A241D; --brand-text:#FFB8A8;
+    --sky:#122A3D; --water:#0E3A54; --sun:#D9A94A; --ice:#33424C;
+    --seal:#7FA5C4; --seal2:#B79488; --belly:#2C3B47; --spot:#233240;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--surface-0)}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--text-primary)}
+button,input{font-family:inherit;color:inherit}
+.app-shell{max-width:480px;margin:0 auto;min-height:100dvh;background:var(--surface-1);position:relative;overflow:hidden;box-shadow:0 0 40px rgba(0,0,0,.06)}
+.step{display:none;min-height:100dvh}
+.step.active{display:block;animation:fadeIn .25s ease}
+#screen-dialogue.active{display:flex;flex-direction:column;height:100dvh}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.pad{padding:24px 20px}
+.qbtn{width:100%;text-align:left;margin-bottom:10px;cursor:pointer;background:var(--surface-1);border:1.5px solid var(--border);border-radius:14px;padding:13px 16px;font-size:14.5px;line-height:1.4}
+.qbtn.sel{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-text)}
+.btn-primary{background:var(--brand);color:#fff;border:none;border-radius:14px;padding:14px 22px;font-weight:600;font-size:15px;cursor:pointer;width:100%;transition:transform .08s}
+.btn-primary:active{transform:scale(.97)}
+.btn-secondary{background:transparent;color:var(--text-secondary);border:1.5px solid var(--border);border-radius:14px;padding:12px 22px;font-size:14px;cursor:pointer;width:100%}
+.chip-sm{background:var(--surface-2);border:1px solid var(--border);border-radius:100px;padding:7px 14px;font-size:12.5px;cursor:pointer}
+.iconbtn{width:34px;height:34px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
+.navbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.seal-icon{cursor:pointer}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes bobFast{0%,100%{transform:translateY(0)}50%{transform:translateY(-11px)}}
+@keyframes bobSmall{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(0.12)}}
+@keyframes flip{0%,100%{transform:rotate(0deg)}50%{transform:rotate(9deg)}}
+@keyframes flipFast{0%,100%{transform:rotate(0deg)}25%{transform:rotate(22deg)}50%{transform:rotate(-8deg)}75%{transform:rotate(18deg)}}
+@keyframes whiskerFade{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes sunPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes ripple{0%,100%{opacity:.55}50%{opacity:.85}}
+@keyframes popIn{0%{opacity:0;transform:translateY(6px) scale(.9)}15%{opacity:1;transform:translateY(0) scale(1.04)}25%{transform:scale(1)}85%{opacity:1}100%{opacity:0;transform:translateY(-4px) scale(.98)}}
+@keyframes bubbleIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes dotBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+.seal-bob{transform-box:fill-box;transform-origin:50% 50%;animation:bob 3.4s ease-in-out infinite}
+.seal-bob.excited{animation:bobFast .5s ease-in-out 3}
+.seal-bob-sm{transform-box:fill-box;transform-origin:50% 50%;animation:bobSmall 3.2s ease-in-out infinite}
+.seal-bob-sm.excited{animation:bobFast .5s ease-in-out 3}
+.eyes{transform-box:fill-box;transform-origin:50% 50%;animation:blink 4.8s ease-in-out infinite}
+.flip{transform-box:fill-box;transform-origin:50% 0%;animation:flip 2.5s ease-in-out infinite}
+.flip-r{animation-delay:1.25s}
+.excited .flip{animation:flipFast .5s ease-in-out 3}
+.whiskers{transform-box:fill-box;transform-origin:50% 50%;animation:whiskerFade 3.6s ease-in-out infinite}
+.hero{position:relative;width:100%;height:420px;overflow:hidden;background:var(--sky)}
+.hero .sun{position:absolute;top:34px;right:44px;width:76px;height:76px;border-radius:50%;background:var(--sun);animation:sunPulse 3.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.hero .water{position:absolute;left:0;right:0;bottom:0;height:160px;background:var(--water)}
+.hero .ice{position:absolute;left:-15%;right:-15%;bottom:38px;height:78px;border-radius:50%;background:var(--ice);animation:ripple 2.8s ease-in-out infinite}
+.hero .seal-wrap{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:230px;height:220px}
+.bubble{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:var(--surface-1);border:1.5px solid var(--border);border-radius:12px;padding:6px 14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;white-space:nowrap;z-index:4;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.bubble.show{animation:popIn 1.5s ease}
+.sheet{background:var(--surface-1);border-radius:20px 20px 0 0;padding:22px 24px 30px;text-align:center;margin-top:-20px;position:relative;z-index:3}
+.dhead{padding:14px 18px 10px;border-bottom:1px solid var(--border);flex:none}
+.dhead-r1{display:flex;align-items:center;gap:8px}
+.dhead-r2{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:8px}
+.dtitle{flex:1;min-width:0}
+.dtitle p{margin:0}
+.dtitle p:first-child{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtitle p:last-child{font-size:11px;color:var(--text-secondary)}
+.favbtn{display:flex;align-items:center;gap:5px;padding:6px 11px;font-size:12px;border-radius:100px;background:var(--surface-2);border:1px solid var(--border);cursor:pointer;flex:none}
+.scorechip{font-size:11px;padding:5px 10px;border-radius:100px;background:var(--surface-2);border:1px solid var(--border);white-space:nowrap;flex:none}
+.legend{display:flex;gap:6px;flex-wrap:wrap;padding:8px 18px}
+.lchip{font-size:10px;padding:3px 8px;border-radius:100px;font-weight:600}
+.dbody{flex:1;overflow-y:auto;padding:16px 18px;min-height:0}
+.line{display:flex;margin-bottom:11px;animation:bubbleIn .3s ease;align-items:flex-end}
+.line.right{justify-content:flex-end}
+.line .av{width:26px;height:26px;flex:none;margin-right:7px;cursor:pointer}
+.line.right .av{order:2;margin-right:0;margin-left:7px}
+.msg{max-width:75%;border-radius:16px;padding:9px 12px;font-size:14px;line-height:1.55}
+.msg.left{background:var(--surface-2);border-bottom-left-radius:5px}
+.msg.right{background:var(--brand);color:#fff;border-bottom-right-radius:5px}
+.msg .who{font-size:10.5px;opacity:.7;margin:0 0 3px}
+.tword{border-bottom:2px dotted currentColor;cursor:pointer;padding:0 1px}
+.tag-imp{color:#8b5cf6} .msg.right .tag-imp{color:#e9d5ff}
+.tag-pc{color:#d97706} .msg.right .tag-pc{color:#fde68a}
+.tag-pres{color:#0891b2} .msg.right .tag-pres{color:#a5f3fc}
+.tag-proche{color:#059669} .msg.right .tag-proche{color:#a7f3d0}
+.tag-fut{color:#be185d} .msg.right .tag-fut{color:#fbcfe8}
+.playbtn{width:20px;height:20px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex:none;margin-left:5px;cursor:pointer}
+.typing{display:inline-flex;gap:3px;padding:10px 12px}
+.typing span{width:5px;height:5px;border-radius:50%;background:var(--text-secondary);animation:dotBounce 1.1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}
+.typing span:nth-child(3){animation-delay:.3s}
+.dfoot{flex:none;border-top:1px solid var(--border);padding:12px 18px;max-height:38dvh;overflow-y:auto}
+.grammar-hint{font-size:12px;color:var(--text-secondary)}
+.grammar-word{font-size:14px;font-weight:700;margin:0 0 3px}
+.grammar-tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:100px;background:var(--surface-2);margin-bottom:4px}
+.starbtn{border:none;background:none;cursor:pointer;color:var(--text-secondary);font-size:17px;padding:0 2px}
+.starbtn.on{color:#d97706}
+.freerow{display:flex;gap:7px;margin-top:8px}
+.freeinput{flex:1;border:1px solid var(--border);border-radius:100px;padding:8px 14px;font-size:13px;background:var(--surface-2)}
+.freesend{width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer}
+.exq{background:var(--surface-2);border-radius:14px;padding:12px}
+.exq p{font-size:13px;margin:0 0 6px}
+.exopt{display:block;width:100%;text-align:left;margin-top:6px;padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface-1);font-size:13px;cursor:pointer}
+.exopt.locked{pointer-events:none}
+.exopt.right{border-color:#059669;background:#d1fae5;color:#065f46;font-weight:700}
+.exopt.wrong{border-color:#dc2626;background:#fee2e2;color:#991b1b;font-weight:700}
+.fcard{background:var(--surface-2);border-radius:14px;padding:16px;text-align:center;margin-bottom:10px;cursor:pointer}
+.hubgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.hubcard{background:var(--surface-2);border-radius:16px;padding:14px 10px;text-align:center;cursor:pointer;border:1.5px solid transparent;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.hubcard.done{border-color:#059669}
+.hubcard .hicon{width:36px;height:36px;border-radius:50%;background:var(--brand-soft);color:var(--brand-text);display:flex;align-items:center;justify-content:center;margin:0 auto 6px;font-size:15px}
+.hubcard p{margin:0;font-size:11.5px;font-weight:600;line-height:1.3}
+.hubcard .chk{position:absolute;top:8px;right:8px;color:#059669;font-size:12px}
+.collect{display:flex;gap:7px;overflow-x:auto;padding:2px 0 8px}
+.cardw{width:40px;height:40px;flex:none;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;opacity:.3}
+.cardw.got{opacity:1;background:var(--brand-soft)}
+.gamebox{background:var(--surface-2);border-radius:16px;padding:14px;margin-bottom:14px;text-align:left}
+.gameprompt{font-size:12.5px;color:var(--text-secondary);margin:0 0 8px;text-align:center}
+.gamechips{display:flex;gap:7px;flex-wrap:wrap;justify-content:center}
+.gamechip{background:var(--surface-1);border:1.5px solid var(--border);border-radius:100px;padding:8px 15px;font-size:13px;cursor:pointer}
+.gamechip.right{border-color:#059669;background:#d1fae5;color:#065f46}
+.gamechip.wrong{border-color:#dc2626;background:#fee2e2;color:#991b1b}
+.gamechip.locked{pointer-events:none}
+.hubhero{display:flex;align-items:center;gap:12px;background:var(--surface-2);border-radius:16px;padding:12px 14px;margin-bottom:12px}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.statcard{background:var(--surface-2);border-radius:16px;padding:14px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.statcard b{display:block;font-size:22px;margin-bottom:2px}
+.statcard span{font-size:11px;color:var(--text-secondary)}
+.notready{background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:12px;padding:10px 12px;font-size:12px;color:var(--text-secondary);margin-top:8px}
+.sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.sheet-overlay.show{display:flex}
+.action-sheet{background:var(--surface-1);width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:10px 18px 28px;animation:sheetUp .25s ease}
+@keyframes sheetUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.sheet-handle{width:36px;height:4px;border-radius:2px;background:var(--border-strong);margin:6px auto 14px}
+.action-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:none;border:none;padding:12px 4px;cursor:pointer;border-bottom:1px solid var(--border)}
+.action-item:last-of-type{border-bottom:none}
+.action-item .aicon{width:36px;height:36px;border-radius:50%;background:var(--brand-soft);color:var(--brand-text);display:flex;align-items:center;justify-content:center;flex:none;font-size:16px}
+.action-item p{margin:0;font-size:14px;font-weight:600}
+.action-item span{font-size:11.5px;color:var(--text-secondary)}
+.phrase-card{background:var(--surface-2);border-radius:16px;padding:13px 14px;margin-bottom:9px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.phrase-card p{margin:0;font-size:13.5px;font-weight:600}
+.phrase-card span{font-size:10.5px;color:var(--text-secondary)}
+.plevel{display:inline-block;font-size:9.5px;padding:2px 8px;border-radius:100px;background:var(--brand-soft);color:var(--brand-text);margin-top:5px}
+.pline{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;background:var(--surface-2);border-radius:14px;padding:11px 13px;margin-bottom:8px}
+.pline .fr{font-size:14px;font-weight:600;margin:0}
+.pline .ru{font-size:12.5px;color:var(--text-secondary);margin:4px 0 0}
+.livewrap{flex:1;overflow-y:auto;padding:16px 18px}
+.liveinput{flex:none;border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px}
+</style>
+</head>
+<body>
+<div class="app-shell">
+<div id="screen-welcome" class="step active">
+  <div class="hero">
+    <div class="water"></div>
+    <div class="sun"></div>
+    <div class="ice"></div>
+    <div class="seal-wrap">
+      <svg viewBox="235 55 220 215" class="seal-bob seal-icon" id="sealTap" width="100%" height="100%" role="img" aria-label="Нерпа Люми">
+        <g transform="rotate(-24 288 220)"><g class="flip flip-l"><ellipse cx="288" cy="220" rx="26" ry="34" fill="var(--seal)"/></g></g>
+        <g transform="rotate(24 392 220)"><g class="flip flip-r"><ellipse cx="392" cy="220" rx="26" ry="34" fill="var(--seal)"/></g></g>
+        <ellipse cx="340" cy="196" rx="92" ry="52" fill="var(--seal)"/>
+        <ellipse cx="340" cy="120" rx="52" ry="48" fill="var(--seal)"/>
+        <ellipse cx="340" cy="138" rx="30" ry="20" fill="var(--belly)"/>
+        <ellipse cx="340" cy="210" rx="58" ry="34" fill="var(--belly)"/>
+        <circle cx="365" cy="185" r="6" fill="var(--spot)"/><circle cx="380" cy="200" r="5" fill="var(--spot)"/><circle cx="350" cy="215" r="4" fill="var(--spot)"/>
+        <g class="eyes"><circle cx="323" cy="112" r="5" fill="#20303c"/><circle cx="357" cy="112" r="5" fill="#20303c"/><circle cx="325" cy="110" r="1.6" fill="#fff"/><circle cx="359" cy="110" r="1.6" fill="#fff"/></g>
+        <ellipse cx="340" cy="128" rx="4" ry="3" fill="#20303c"/>
+        <g class="whiskers"><line x1="333" y1="130" x2="305" y2="126" stroke="#20303c" stroke-width="1"/><line x1="333" y1="134" x2="305" y2="136" stroke="#20303c" stroke-width="1"/><line x1="347" y1="130" x2="375" y2="126" stroke="#20303c" stroke-width="1"/><line x1="347" y1="134" x2="375" y2="136" stroke="#20303c" stroke-width="1"/></g>
+      </svg>
+    </div>
+    <div class="bubble" id="sealBubble">Salut !</div>
+  </div>
+  <div class="sheet">
+    <h1 style="font-size:22px;margin:0 0 6px">Привет, я Люми</h1>
+    <p style="color:var(--text-secondary);margin:0 0 16px;font-size:14px">Нажми на меня, если просто хочешь поболтать — или начни сцену.</p>
+    <button id="startBtn" class="btn-primary">Начать</button>
+  </div>
+</div>
+
+<div id="screen-quiz" class="step pad">
+  <div style="display:flex;justify-content:center;margin-bottom:10px">
+    <svg width="44" height="44" viewBox="0 0 64 64" class="seal-icon" id="faceQuiz"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+  </div>
+  <div id="quiz-content"></div>
+</div>
+
+<div id="screen-thinking" class="step pad" style="text-align:center;padding-top:3rem">
+  <svg width="52" height="52" viewBox="0 0 64 64" class="seal-icon" id="faceThinking"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+  <p style="color:var(--text-secondary);margin-top:0.8rem;font-size:14px">Секунду, открываю библиотеку сцен…</p>
+</div>
+
+<div id="screen-hub" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="hubHome"><i class="ti ti-home" aria-hidden="true"></i></button>
+    <h2 style="margin:0;font-size:16px;flex:1">Библиотека сцен</h2>
+    <button class="iconbtn" id="hubProfile"><i class="ti ti-chart-bar" aria-hidden="true"></i></button>
+  </div>
+  <div class="hubhero">
+    <svg width="46" height="46" viewBox="0 0 64 64" class="seal-icon" id="faceHub" style="flex:none"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+    <p id="hubMsg" style="margin:0;font-size:12.5px;color:var(--text-secondary)"></p>
+  </div>
+  <p style="font-size:11px;color:var(--text-secondary);margin:0 0 5px">Коллекция Люми</p>
+  <div class="collect" id="collectRow"></div>
+  <p style="font-size:11px;color:var(--text-secondary);margin:12px 0 5px">Сцены с диалогом</p>
+  <div class="hubgrid" id="hubGrid"></div>
+  <button class="btn-secondary" id="hubPhrasebook" style="margin-top:14px">Разговорник — 30 бытовых диалогов</button>
+  <button class="btn-secondary" id="hubChat" style="margin-top:9px">Просто поболтать с Люми</button>
+</div>
+
+<div id="screen-phrasebook" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="pbBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 style="margin:0;font-size:16px">Разговорник</h2>
+  </div>
+  <p style="font-size:12px;color:var(--text-secondary);margin:0 0 10px">Без пословного разбора — просто читай и слушай произношение.</p>
+  <div id="pbList"></div>
+</div>
+
+<div id="screen-phrase" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="phBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 id="phTitle" style="margin:0;font-size:16px">Тема</h2>
+  </div>
+  <div id="phLines"></div>
+</div>
+
+<div id="screen-livechat" class="step" style="display:none">
+  <div class="dhead">
+    <div class="dhead-r1">
+      <button class="iconbtn" id="liveBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+      <svg width="28" height="28" viewBox="0 0 64 64" class="seal-icon seal-bob-sm"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+      <div class="dtitle"><p>Люми</p><p id="liveSub">на связи</p></div>
+    </div>
+  </div>
+  <div class="livewrap" id="liveMsgs"></div>
+  <div class="liveinput">
+    <input type="text" class="freeinput" id="liveInput" placeholder="Напиши Люми...">
+    <button class="freesend" id="liveSend"><i class="ti ti-arrow-right" aria-hidden="true" style="font-size:15px"></i></button>
+  </div>
+</div>
+
+<div class="sheet-overlay" id="sealSheetOverlay">
+  <div class="action-sheet">
+    <div class="sheet-handle"></div>
+    <button class="action-item" id="actChat"><div class="aicon"><i class="ti ti-message-circle" aria-hidden="true"></i></div><div><p>Поболтать на тему</p><span>Выбрать тему и начать разговор</span></div></button>
+    <button class="action-item" id="actJoke"><div class="aicon"><i class="ti ti-mood-smile" aria-hidden="true"></i></div><div><p>Расскажи анекдот</p><span>По-французски, с переводом</span></div></button>
+    <button class="action-item" id="actGrammar"><div class="aicon"><i class="ti ti-book" aria-hidden="true"></i></div><div><p>Объясни грамматику</p><span>Спроси про любое правило</span></div></button>
+    <button class="action-item" id="actPraise"><div class="aicon"><i class="ti ti-heart" aria-hidden="true"></i></div><div><p>Похвали меня</p><span>Немного поддержки от Люми</span></div></button>
+    <button class="action-item" id="actProfile2"><div class="aicon"><i class="ti ti-chart-bar" aria-hidden="true"></i></div><div><p>Мой прогресс</p><span>Сцены, счёт, избранное</span></div></button>
+  </div>
+</div>
+
+<div id="screen-favorites" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="favBack2"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 style="margin:0;font-size:16px">Избранные слова</h2>
+  </div>
+  <div id="favList"></div>
+</div>
+
+<div id="screen-profile" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="profileBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 style="margin:0;font-size:16px">Твой прогресс</h2>
+  </div>
+  <div style="text-align:center;margin:8px 0 6px">
+    <svg width="60" height="60" viewBox="0 0 64 64" class="seal-icon seal-bob-sm" id="faceProfile"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+    <p id="profileMsg" style="font-size:13px;color:var(--text-secondary);margin:8px 0 0"></p>
+  </div>
+  <div class="statgrid">
+    <div class="statcard"><b id="statScenes">0/8</b><span>сцен пройдено</span></div>
+    <div class="statcard"><b id="statScore">0:0</b><span>счёт ты vs Люми</span></div>
+    <div class="statcard"><b id="statWords">0</b><span>слов в избранном</span></div>
+    <div class="statcard"><b id="statGames">0</b><span>раундов игр сыграно</span></div>
+  </div>
+  <button class="btn-primary" id="profileToHub">К библиотеке сцен</button>
+</div>
+
+<div id="screen-chattopics" class="step pad">
+  <div class="navbar">
+    <button class="iconbtn" id="chatBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 style="margin:0;font-size:16px">О чём поболтаем?</h2>
+  </div>
+  <div class="hubhero">
+    <svg width="40" height="40" viewBox="0 0 64 64" style="flex:none"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+    <p style="margin:0;font-size:12.5px;color:var(--text-secondary)">Выбери тему — здесь будет живой ответ Люми.</p>
+  </div>
+  <div class="hubgrid" id="chatGrid"></div>
+  <div class="notready" id="chatTopicsNote" style="display:none">Живой чат требует бэкенда — задай <code>CONFIG.apiBase</code> в коде и разверни server.js.</div>
+</div>
+
+<div id="screen-recap" class="step pad" style="text-align:center">
+  <svg width="64" height="64" viewBox="0 0 64 64" class="seal-icon seal-bob-sm" id="faceRecap" style="margin:8px auto 10px;display:block"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+  <h2 id="recapTitle" style="margin:0 0 5px;font-size:19px">Bravo !</h2>
+  <p id="recapText" style="color:var(--text-secondary);font-size:13px;margin:0 0 14px"></p>
+  <div style="background:var(--surface-2);border-radius:16px;padding:14px;margin-bottom:14px">
+    <p style="font-size:12px;color:var(--text-secondary);margin:0 0 6px">Счёт этой сцены</p>
+    <p id="recapScore" style="font-size:24px;font-weight:700;margin:0"></p>
+  </div>
+  <div class="gamebox">
+    <p class="gameprompt">Мини-игра с Люми: найди перевод</p>
+    <p id="gamePrompt" style="text-align:center;font-weight:700;font-size:15px;margin:0 0 12px"></p>
+    <div class="gamechips" id="gameChips"></div>
+    <p id="gameResult" style="text-align:center;font-size:12px;color:var(--text-secondary);margin:9px 0 0"></p>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:9px">
+    <button class="btn-primary" id="recapReplay">Пройти ещё раз</button>
+    <button class="btn-secondary" id="recapHub">Выбрать другую сцену</button>
+    <button class="btn-secondary" id="recapProfile">Мой прогресс</button>
+  </div>
+</div>
+
+<div id="screen-dialogue" class="step">
+  <div class="dhead">
+    <div class="dhead-r1">
+      <button class="iconbtn" id="dBack"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+      <svg width="28" height="28" viewBox="0 0 64 64" class="seal-icon" id="faceDialogue"><circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/></svg>
+      <div class="dtitle"><p id="dTitle">В кафе</p><p id="dLevel"></p></div>
+    </div>
+    <div class="dhead-r2">
+      <span class="scorechip" id="scoreChip" style="display:none"></span>
+      <button id="favToggle" class="favbtn"><i class="ti ti-star" aria-hidden="true"></i><span id="favCount">0</span></button>
+    </div>
+  </div>
+  <div class="legend">
+    <span class="lchip" style="background:#f3e8ff;color:#6b21a8">Imparfait</span>
+    <span class="lchip" style="background:#fef3c7;color:#92400e">P. composé</span>
+    <span class="lchip" style="background:#cffafe;color:#155e75">Présent</span>
+    <span class="lchip" style="background:#d1fae5;color:#065f46">venir de+inf</span>
+  </div>
+  <div class="dbody" id="dbody"></div>
+  <div class="dfoot" id="dfoot"><p class="grammar-hint">Нажми на слово — перевод. Кружок динамика — озвучка.</p></div>
+</div>
+
+</div>
+<script>
+(function(){
+function notReady(msg){
+  alert((msg||'Эта функция требует подключения AI-бэкенда.') + '\n\nЭто статический демо-прототип: чтобы Люми отвечала по-настоящему, нужен сервер с доступом к Anthropic API (нельзя хранить API-ключ в браузере). Подключите свой сервер в функции notReady() в коде.');
+}
+
+var LEVELS=[{v:'beg',l:'Начинаю с нуля'},{v:'forgot',l:'Кое-что помню, но нужно освежить'},{v:'grammar',l:'Знаю грамматику, но не хватает практики'},{v:'active',l:'Свободно говорю на французском'}];
+var SCENES=[
+{v:'casual',l:'Повседневный',icon:'ti-coffee',scene:'В кафе',teaser:'Enfin ! Je pensais que tu ne venais plus.',color:'#8C6E63'},
+{v:'business',l:'Деловой',icon:'ti-briefcase',scene:'Деловая встреча',teaser:'Bonjour, merci d\u2019être à l\u2019heure. On peut commencer ?',color:'#334155'},
+{v:'slang',l:'Со сленгом',icon:'ti-music',scene:'Тусовка у Макса',teaser:'Grave, t\u2019as vu qui vient d\u2019arriver ?!',color:'#111827'},
+{v:'travel',l:'В пути',icon:'ti-train',scene:'Опоздание на поезд',teaser:'Cours ! Le train part dans deux minutes !',color:'#b91c1c'},
+{v:'shopping',l:'Шопинг',icon:'ti-shopping-bag',scene:'Шопинг-провал',teaser:'Non, celle-là est horrible. Essaie l\u2019autre.',color:'#c2410c'},
+{v:'dating',l:'Свидания',icon:'ti-heart',scene:'Первое свидание',teaser:'Alors… tu es exactement comme sur les photos.',color:'#db2777'},
+{v:'party',l:'Вечеринка',icon:'ti-confetti',scene:'Прячемся от Томаса',teaser:'Chut ! Il arrive, il arrive !',color:'#7c3aed'},
+{v:'series',l:'Сериалы',icon:'ti-device-tv',scene:'Спойлеры за кофе',teaser:'Ne me dis rien, je n\u2019ai pas fini la saison !',color:'#0f766e'}
+];
+var CHAT_TOPICS=[
+{v:'animals',l:'Животные',icon:'ti-paw'},{v:'music',l:'Музыка',icon:'ti-music'},
+{v:'food',l:'Еда',icon:'ti-soup'},{v:'travel2',l:'Путешествия',icon:'ti-plane'},
+{v:'films',l:'Фильмы',icon:'ti-movie'},{v:'coffee2',l:'Утренний кофе',icon:'ti-cup'},
+{v:'dreams',l:'Странные сны',icon:'ti-moon'},{v:'catsdogs',l:'Кошки vs собаки',icon:'ti-cat'}
+];
+var LEVEL_LABEL={beg:'Начинаю с нуля',forgot:'Кое-что помню, подзабыт(о)',grammar:'Знает грамматику, мало практики',active:'Свободно говорит на французском'};
+var state={level:null};
+function T(w,tr){return {w:w,tr:tr};} function G(w,tag,tr){return {w:w,tag:tag,tr:tr};} function P(t){return {t:t};} function E(l){l.phaseEnd=true; return l;}
+var DIALOGUES={
+casual:[
+{sp:'Max',segs:[T('Enfin','наконец'),P(' !\u00A0'),T('Je','я'),P(' '),G('pensais','imp','думал'),P(' '),T('que','что'),P(' '),T('tu','ты'),P(' '),T('ne','не'),P(' '),G('venais','imp','приходишь'),P(' '),T('plus','больше'),P('.')]},
+{sp:'Zoé',segs:[T('Désolée','извини'),P(', '),T('désolée','извини'),P(' !\u00A0'),T('Le','арт.'),P(' '),T('bus','автобус'),P(' '),G('a eu','pc','случился'),P(' '),T('du','немного'),P(' '),T('retard','опоздание'),P('.')]},
+{sp:'Max',segs:[T('T\u2019inquiète','не переживай'),P(', '),T('je','я'),P(' '),G('viens d\u2019arriver','proche','только что пришёл'),P(' '),T('aussi','тоже'),P('.')]},
+E({sp:'Zoé',segs:[T('Bon','ну'),P(', '),T('qu\u2019est-ce que','что'),P(' '),T('tu','ты'),P(' '),G('prends','pres','берёшь'),P(' ?')]}),
+{sp:'Max',segs:[T('Un','арт.'),P(' '),T('café','кофе'),P(' '),T('crème','с молоком'),P(', '),T('comme','как'),P(' '),T('toujours','всегда'),P('.')]},
+{sp:'Zoé',segs:[T('Je','я'),P(' '),G('sais pas','pres','не знаю'),P(' '),T('encore','ещё'),P('... '),T('un','арт.'),P(' '),T('thé','чай'),P(' '),T('peut-être','может быть'),P('.')]},
+{sp:'Max',segs:[T('Alors','ну'),P(', '),T('quoi de neuf','что нового'),P(' ?')]},
+{sp:'Zoé',segs:[T('J\u2019ai','я'),P(' '),G('changé','pc','поменяла'),P(' '),T('de','с'),P(' '),T('travail','работой'),P(' '),T('le mois dernier','в прошлом месяце'),P('.')]}
+],
+business:[
+{sp:'Max',segs:[T('Bonjour','здравствуйте'),P(', '),T('merci','спасибо'),P(' '),T('d\u2019être','что'),P(' '),T('à l\u2019heure','вовремя'),P('. '),T('On','мы'),P(' '),T('peut','можем'),P(' '),G('commencer','pres','начать'),P(' ?')]},
+E({sp:'Zoé',segs:[T('Bien sûr','конечно'),P('. '),T('J\u2019',''),G('ai préparé','pc','подготовила'),P(' '),T('le','арт.'),P(' '),T('rapport','отчёт'),P('.')]}),
+{sp:'Max',segs:[T('Parfait','отлично'),P('. '),T('Vous','вы'),P(' '),G('avez eu','pc','было'),P(' '),T('le temps','время'),P(' '),T('de vérifier','проверить'),P(' ?')]},
+{sp:'Zoé',segs:[T('Oui','да'),P(', '),T('je','я'),P(' '),T('vous','вам'),P(' '),G('enverrai','fut','пришлю'),P(' '),T('les chiffres','цифры'),P(' '),T('demain','завтра'),P('.')]}
+],
+slang:[
+{sp:'Max',segs:[T('Grave','реально'),P(', '),T('t\u2019as vu','видела'),P(' '),T('qui','кто'),P(' '),G('vient d\u2019arriver','proche','только что пришёл'),P(' ?!')]},
+E({sp:'Zoé',segs:[T('Non','нет'),P(', '),T('qui ça','кто это'),P(' ?')]}),
+{sp:'Max',segs:[T('Thomas','Томас'),P(', '),T('avec','с'),P(' '),T('sa nouvelle coupe','новой стрижкой'),P('.')]},
+{sp:'Zoé',segs:[T('Sérieux','серьёзно'),P(' ? '),T('Ça lui','ему'),P(' '),G('va','pres','идёт'),P(' '),T('trop bien','очень'),P('.')]}
+],
+travel:[
+{sp:'Max',segs:[T('Cours','беги'),P(' ! '),T('Le','арт.'),P(' '),T('train','поезд'),P(' '),G('part','pres','отправляется'),P(' '),T('dans','через'),P(' '),T('deux minutes','две минуты'),P(' !')]},
+E({sp:'Zoé',segs:[T('Attends','подожди'),P('-'),T('moi','меня'),P(' ! '),T('Je','я'),P(' '),G('ai oublié','pc','забыла'),P(' '),T('mon billet','свой билет'),P('.')]}),
+{sp:'Max',segs:[T('Sérieux','серьёзно'),P(' ?! '),T('On','мы'),P(' '),G('va rater','proche','вот-вот опоздаем на'),P(' '),T('le train','поезд'),P(' !')]},
+{sp:'Zoé',segs:[T('Je','я'),P(' '),G('ai trouvé','pc','нашла'),P(' '),T('le billet','билет'),P(' ! '),T('On','мы'),P(' '),T('y','туда'),P(' '),T('va','идём'),P(' !')]}
+],
+shopping:[
+{sp:'Max',segs:[T('Non','нет'),P(', '),T('celle-là','эта'),P(' '),G('est','pres','есть'),P(' '),T('horrible','ужасная'),P('. '),T('Essaie','попробуй'),P(' '),T('l\u2019autre','другую'),P('.')]},
+E({sp:'Zoé',segs:[T('Tu es sûr','ты уверен'),P(' ? '),T('Moi je la','я её'),P(' '),G('trouve','pres','нахожу'),P(' '),T('pas mal','неплохой'),P('.')]}),
+{sp:'Max',segs:[T('Franchement','честно'),P(', '),T('non','нет'),P('. '),T('Prends','возьми'),P(' '),T('la bleue','синюю'),P('.')]},
+{sp:'Zoé',segs:[T('Bon','ну'),P(', '),T('d\u2019accord','ладно'),P(', '),T('je te fais confiance','доверюсь тебе'),P('.')]}
+],
+dating:[
+{sp:'Max',segs:[T('Alors','ну что'),P('… '),T('tu es exactement','ты точно такая'),P(' '),T('comme sur les photos','как на фото'),P('.')]},
+E({sp:'Zoé',segs:[T('Merci','спасибо'),P(', '),T('toi aussi','ты тоже'),P(' ! '),T('Tu es plus grand','ты выше'),P(' '),T('que je','чем я'),P(' '),G('pensais','imp','думала'),P('.')]}),
+{sp:'Max',segs:[T('Ça, c\u2019est un compliment','это комплимент'),P(' '),T('ou pas','или нет'),P(' ?')]},
+{sp:'Zoé',segs:[T('Prends-le','прими это'),P(' '),T('comme un compliment','как комплимент'),P('.')]}
+],
+party:[
+{sp:'Max',segs:[T('Chut','тихо'),P(' ! '),T('Il','он'),P(' '),G('arrive','pres','идёт'),P(', '),T('il','он'),P(' '),T('arrive','идёт'),P(' !')]},
+E({sp:'Zoé',segs:[T('Quoi','что'),P(', '),T('qui ça','кто'),P(' ?')]}),
+{sp:'Max',segs:[T('Thomas','Томас'),P(', '),T('cache-toi','спрячься'),P(' !')]},
+{sp:'Zoé',segs:[T('Trop tard','слишком поздно'),P(', '),T('il','он'),P(' '),T('nous','нас'),P(' '),G('a vus','pc','увидел'),P('.')]}
+],
+series:[
+{sp:'Max',segs:[T('Ne me dis rien','ничего не говори'),P(', '),T('je','я'),P(' '),T('n\u2019ai pas','не'),P(' '),G('fini','pc','закончил'),P(' '),T('la saison','сезон'),P(' !')]},
+E({sp:'Zoé',segs:[T('Oups','ой'),P(', '),T('désolée','извини'),P(' ! '),T('Je me tais','молчу'),P('.')]}),
+{sp:'Max',segs:[T('Merci','спасибо'),P('. '),T('J\u2019',''),G('ai regardé','pc','посмотрел'),P(' '),T('juste un épisode','всего одну серию'),P(' '),T('hier','вчера'),P('.')]},
+{sp:'Zoé',segs:[T('Moi','я'),P(' '),T('j\u2019ai','я'),P(' '),G('tout regardé','pc','всё посмотрела'),P(' '),T('en une nuit','за одну ночь'),P('.')]}
+]
+};
+var EXERCISES={
+casual:[{q:'Le bus ___ du retard.',options:['a eu','avait','aura'],correct:'a eu'},{q:'J\u2019___ de travail le mois dernier.',options:['ai changé','change','changerai'],correct:'ai changé'}],
+business:[{q:'Je vous ___ les chiffres demain.',options:['enverrai','envoie','ai envoyé'],correct:'enverrai'}],
+slang:[{q:'Il ___ d\u2019arriver.',options:['vient','venait','viendra'],correct:'vient'}],
+travel:[{q:'J\u2019___ mon billet.',options:['ai oublié','oublie','oublierai'],correct:'ai oublié'}],
+shopping:[{q:'Celle-là ___ horrible.',options:['est','était','sera'],correct:'est'}],
+dating:[{q:'Tu es plus grand que je ne le ___.',options:['pensais','pense','penserai'],correct:'pensais'}],
+party:[{q:'Il nous ___ !',options:['a vus','voit','verra'],correct:'a vus'}],
+series:[{q:'J\u2019___ juste un épisode hier.',options:['ai regardé','regarde','regarderai'],correct:'ai regardé'}]
+};
+var TAG_LABEL={imp:'Imparfait — прошедшее описательное',pc:'Passé composé — прошедшее завершённое',pres:'Présent — настоящее',proche:'venir de / aller + infinitif — близкое время',fut:'Futur simple — будущее время'};
+var dIndex=-1,playTimer=null,curDialogue=[],curReg=null,favorites=[],score={you:0,lumi:0},sceneScore={you:0,lumi:0},earned=[],gamesPlayed=0,returnScreen='welcome';
+
+// ---- Настройки AI-бэкенда ----
+// Укажи адрес своего сервера (см. server.js) — например 'https://your-server.onrender.com'
+// Пока пусто — живой чат честно покажет, что бэкенд не подключён.
+var CONFIG = { apiBase: '' };
+var liveHistory = [];
+
+var PHRASEBOOK = [
+{id:'late_work',topic:'Опоздание на работу',level:'forgot',lines:[
+ {speaker:'Max',fr:'Désolé, le métro était bloqué, encore.',ru:'Извини, метро опять встало.'},
+ {speaker:'Zoé',fr:'T\u2019inquiète, le patron n\u2019est même pas encore arrivé.',ru:'Не переживай, начальник ещё даже не пришёл.'},
+ {speaker:'Max',fr:'Ah bon ? Tant mieux pour moi alors.',ru:'А, ну тогда мне повезло.'},
+ {speaker:'Zoé',fr:'Profites-en, ça n\u2019arrive pas souvent.',ru:'Пользуйся моментом, такое нечасто бывает.'}]},
+{id:'market',topic:'На рынке',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Elles sont mûres, vos pêches ?',ru:'Персики спелые?'},
+ {speaker:'Vendeur',fr:'Goûtez, vous verrez.',ru:'Попробуйте, сами увидите.'},
+ {speaker:'Zoé',fr:'Mmh, parfait. J\u2019en prends un kilo.',ru:'Ммм, идеально. Возьму кило.'},
+ {speaker:'Vendeur',fr:'Et avec ça ?',ru:'Что-нибудь ещё?'}]},
+{id:'doctor',topic:'У врача',level:'grammar',lines:[
+ {speaker:'Max',fr:'Alors, qu\u2019est-ce qui ne va pas ?',ru:'Итак, что не так?'},
+ {speaker:'Zoé',fr:'J\u2019ai mal à la gorge depuis trois jours.',ru:'У меня болит горло уже три дня.'},
+ {speaker:'Max',fr:'Vous avez de la fièvre ?',ru:'Температура есть?'},
+ {speaker:'Zoé',fr:'Un peu, hier soir surtout.',ru:'Немного, особенно вчера вечером.'}]},
+{id:'gym',topic:'В спортзале',level:'forgot',lines:[
+ {speaker:'Max',fr:'Tu viens souvent ici ?',ru:'Ты часто сюда ходишь?'},
+ {speaker:'Zoé',fr:'Deux fois par semaine, si je suis motivée.',ru:'Два раза в неделю, если есть настроение.'},
+ {speaker:'Max',fr:'Moi j\u2019ai pris un abonnement en janvier, j\u2019y suis allé trois fois.',ru:'Я взял абонемент в январе, был три раза.'},
+ {speaker:'Zoé',fr:'Classique.',ru:'Классика.'}]},
+{id:'texting',topic:'Переписка с другом',level:'forgot',lines:[
+ {speaker:'Zoé',fr:'T\u2019es où ? Ça fait dix minutes que j\u2019attends.',ru:'Ты где? Уже десять минут жду.'},
+ {speaker:'Max',fr:'J\u2019arrive j\u2019arrive, embouteillages.',ru:'Иду-иду, пробки.'},
+ {speaker:'Zoé',fr:'Tu dis ça à chaque fois.',ru:'Ты так каждый раз говоришь.'},
+ {speaker:'Max',fr:'Cette fois c\u2019est vrai, je te jure.',ru:'В этот раз правда, клянусь.'}]},
+{id:'interview',topic:'Собеседование',level:'active',lines:[
+ {speaker:'Recruteur',fr:'Parlez-moi de votre dernier poste.',ru:'Расскажите о последнем месте работы.'},
+ {speaker:'Zoé',fr:'J\u2019ai travaillé deux ans dans le marketing digital.',ru:'Два года проработала в digital-маркетинге.'},
+ {speaker:'Recruteur',fr:'Pourquoi voulez-vous partir ?',ru:'Почему хотите уйти?'},
+ {speaker:'Zoé',fr:'Je cherche plus de responsabilités.',ru:'Ищу больше ответственности.'}]},
+{id:'lost_tourist',topic:'Заблудившийся турист',level:'beg',lines:[
+ {speaker:'Touriste',fr:'Excusez-moi, la tour Eiffel, c\u2019est par où ?',ru:'Извините, где Эйфелева башня?'},
+ {speaker:'Max',fr:'Vous êtes à l\u2019opposé, il faut prendre le métro.',ru:'Вы в противоположной стороне, нужно на метро.'},
+ {speaker:'Touriste',fr:'Oh non... Merci quand même.',ru:'О нет... Спасибо всё равно.'},
+ {speaker:'Max',fr:'Ligne 6, direction Nation, ça vous rapproche.',ru:'Линия 6, в сторону Насьон, будет ближе.'}]},
+{id:'birthday',topic:'День рождения',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Joyeux anniversaire ! Tiens, c\u2019est pour toi.',ru:'С днём рождения! Держи, это тебе.'},
+ {speaker:'Max',fr:'Oh, tu n\u2019étais pas obligée !',ru:'О, не стоило!'},
+ {speaker:'Zoé',fr:'Ouvre-le, j\u2019espère que ça te plaira.',ru:'Открой, надеюсь, понравится.'},
+ {speaker:'Max',fr:'C\u2019est exactement ce qu\u2019il me fallait.',ru:'Это именно то, что мне было нужно.'}]},
+{id:'breakup',topic:'Расставание',level:'active',lines:[
+ {speaker:'Max',fr:'On doit parler.',ru:'Нам надо поговорить.'},
+ {speaker:'Zoé',fr:'Je sais ce que tu vas dire.',ru:'Я знаю, что ты скажешь.'},
+ {speaker:'Max',fr:'Ça ne va plus entre nous, tu ne trouves pas ?',ru:'У нас всё разладилось, тебе не кажется?'},
+ {speaker:'Zoé',fr:'Depuis un moment, oui.',ru:'Уже какое-то время, да.'}]},
+{id:'apartment',topic:'Поиск квартиры',level:'grammar',lines:[
+ {speaker:'Agent',fr:'L\u2019appartement fait trente mètres carrés, avec balcon.',ru:'Квартира тридцать квадратов, с балконом.'},
+ {speaker:'Zoé',fr:'Le loyer inclut les charges ?',ru:'Аренда включает коммуналку?'},
+ {speaker:'Agent',fr:'Non, il faut ajouter cent euros environ.',ru:'Нет, плюс примерно сто евро.'},
+ {speaker:'Zoé',fr:'D\u2019accord, je réfléchis et je vous rappelle.',ru:'Понятно, подумаю и перезвоню.'}]},
+{id:'weather',topic:'Про погоду',level:'beg',lines:[
+ {speaker:'Max',fr:'Il pleut encore, c\u2019est pas possible.',ru:'Опять дождь, невозможно.'},
+ {speaker:'Zoé',fr:'Ça fait une semaine, je n\u2019en peux plus.',ru:'Уже неделю, я больше не могу.'},
+ {speaker:'Max',fr:'Ils annoncent du soleil pour le week-end.',ru:'Обещают солнце на выходные.'},
+ {speaker:'Zoé',fr:'J\u2019y crois quand je le vois.',ru:'Поверю, когда увижу.'}]},
+{id:'pizza',topic:'Заказ пиццы',level:'beg',lines:[
+ {speaker:'Max',fr:'Une margherita et une quatre fromages, s\u2019il vous plaît.',ru:'Маргариту и четыре сыра, пожалуйста.'},
+ {speaker:'Livreur',fr:'Ça sera trente minutes environ.',ru:'Будет минут тридцать.'},
+ {speaker:'Max',fr:'Parfait, merci.',ru:'Отлично, спасибо.'},
+ {speaker:'Livreur',fr:'Vous avez de la monnaie sur cinquante euros ?',ru:'У вас есть сдача с пятидесяти евро?'}]},
+{id:'hairdresser',topic:'У парикмахера',level:'forgot',lines:[
+ {speaker:'Coiffeur',fr:'Vous voulez la même longueur ?',ru:'Оставляем ту же длину?'},
+ {speaker:'Zoé',fr:'Non, coupez plutôt court cette fois.',ru:'Нет, в этот раз покороче.'},
+ {speaker:'Coiffeur',fr:'D\u2019accord, on enlève combien ?',ru:'Хорошо, сколько снимаем?'},
+ {speaker:'Zoé',fr:'Genre dix centimètres, soyez courageux.',ru:'Сантиметров десять, не бойтесь.'}]},
+{id:'borrow_money',topic:'Просьба денег в долг',level:'forgot',lines:[
+ {speaker:'Max',fr:'Tu pourrais me dépanner de vingt euros ?',ru:'Можешь одолжить двадцать евро?'},
+ {speaker:'Zoé',fr:'Encore ? C\u2019est la troisième fois ce mois-ci.',ru:'Опять? Уже третий раз в этом месяце.'},
+ {speaker:'Max',fr:'Je te jure, je te rends tout vendredi.',ru:'Клянусь, верну всё в пятницу.'},
+ {speaker:'Zoé',fr:'C\u2019est ce que tu as dit la dernière fois.',ru:'Ты так и в прошлый раз говорил.'}]},
+{id:'long_time',topic:'Встреча после долгого перерыва',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Ça fait un bail ! Tu as changé de coiffure.',ru:'Сто лет не виделись! Ты сменил причёску.'},
+ {speaker:'Max',fr:'Oui, j\u2019avais besoin de changement.',ru:'Да, нужны были перемены.'},
+ {speaker:'Zoé',fr:'Ça te va bien. Alors, quoi de neuf ?',ru:'Тебе идёт. Ну, что нового?'},
+ {speaker:'Max',fr:'Plein de choses, on a de quoi parler.',ru:'Много всего, есть о чём поговорить.'}]},
+{id:'trip_plan',topic:'Планирование поездки',level:'grammar',lines:[
+ {speaker:'Max',fr:'On part quand, finalement ?',ru:'Когда в итоге едем?'},
+ {speaker:'Zoé',fr:'Début septembre, les billets sont moins chers.',ru:'В начале сентября, билеты дешевле.'},
+ {speaker:'Max',fr:'Et on reste combien de temps ?',ru:'И на сколько остаёмся?'},
+ {speaker:'Zoé',fr:'Dix jours, pas plus, question de budget.',ru:'Дней десять, не больше, бюджет ограничен.'}]},
+{id:'pharmacy',topic:'В аптеке',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Bonjour, il me faudrait quelque chose contre le mal de tête.',ru:'Здравствуйте, нужно что-то от головной боли.'},
+ {speaker:'Pharmacien',fr:'Vous avez déjà pris quelque chose aujourd\u2019hui ?',ru:'Вы уже что-то принимали сегодня?'},
+ {speaker:'Zoé',fr:'Non, rien pour l\u2019instant.',ru:'Нет, пока ничего.'},
+ {speaker:'Pharmacien',fr:'Je vous conseille celui-ci, une prise et ça passe.',ru:'Советую вот это, одна доза и пройдёт.'}]},
+{id:'sports',topic:'Обсуждение спорта',level:'forgot',lines:[
+ {speaker:'Max',fr:'T\u2019as vu le match hier soir ?',ru:'Видела вчерашний матч?'},
+ {speaker:'Zoé',fr:'Non, je me suis endormie avant la fin.',ru:'Нет, уснула до конца.'},
+ {speaker:'Max',fr:'Dommage, c\u2019était énorme, ils ont gagné aux prolongations.',ru:'Жаль, было мощно, выиграли в овертайме.'},
+ {speaker:'Zoé',fr:'Je regarderai le résumé alors.',ru:'Тогда посмотрю обзор.'}]},
+{id:'news',topic:'Обсуждение новостей',level:'active',lines:[
+ {speaker:'Zoé',fr:'T\u2019as vu les infos ce matin ?',ru:'Видел новости утром?'},
+ {speaker:'Max',fr:'Vaguement, j\u2019étais encore à moitié endormi.',ru:'Смутно, я был ещё полусонный.'},
+ {speaker:'Zoé',fr:'Il paraît qu\u2019il va y avoir une grève la semaine prochaine.',ru:'Говорят, на следующей неделе будет забастовка.'},
+ {speaker:'Max',fr:'Encore une, ça devient une habitude.',ru:'Опять, это уже привычка.'}]},
+{id:'directions',topic:'Просьба показать дорогу',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Excusez-moi, vous savez où se trouve la poste ?',ru:'Извините, вы не знаете, где почта?'},
+ {speaker:'Passant',fr:'Oui, deuxième rue à droite, puis tout droit.',ru:'Да, вторая улица направо, потом прямо.'},
+ {speaker:'Zoé',fr:'C\u2019est loin à pied ?',ru:'Далеко пешком?'},
+ {speaker:'Passant',fr:'Dix minutes maximum.',ru:'Максимум десять минут.'}]},
+{id:'bakery',topic:'В булочной',level:'beg',lines:[
+ {speaker:'Zoé',fr:'Une baguette bien cuite, s\u2019il vous plaît.',ru:'Один хорошо пропечённый багет, пожалуйста.'},
+ {speaker:'Boulanger',fr:'Voilà. Autre chose ?',ru:'Вот. Что-нибудь ещё?'},
+ {speaker:'Zoé',fr:'Deux croissants aussi, ils ont l\u2019air délicieux.',ru:'И два круассана, они выглядят вкусно.'},
+ {speaker:'Boulanger',fr:'Ils sortent du four, vous avez bon goût.',ru:'Только из печи, у вас хороший вкус.'}]},
+{id:'library',topic:'В библиотеке',level:'grammar',lines:[
+ {speaker:'Zoé',fr:'Vous auriez ce livre en version française ?',ru:'У вас есть эта книга на французском?'},
+ {speaker:'Bibliothécaire',fr:'Laissez-moi vérifier... oui, il en reste un exemplaire.',ru:'Дайте проверю... да, остался один экземпляр.'},
+ {speaker:'Zoé',fr:'Parfait, je peux l\u2019emprunter combien de temps ?',ru:'Отлично, на сколько можно взять?'},
+ {speaker:'Bibliothécaire',fr:'Trois semaines, renouvelable une fois.',ru:'На три недели, можно продлить один раз.'}]},
+{id:'dating_app',topic:'Свидание через приложение',level:'forgot',lines:[
+ {speaker:'Max',fr:'Salut, désolé pour le retard hier soir.',ru:'Привет, извини за вчерашнее опоздание.'},
+ {speaker:'Zoé',fr:'T\u2019inquiète, on peut se voir un autre jour si tu veux.',ru:'Не переживай, можем встретиться в другой день.'},
+ {speaker:'Max',fr:'Ça marche pour toi jeudi ?',ru:'Тебе подходит четверг?'},
+ {speaker:'Zoé',fr:'Jeudi, ça devrait aller.',ru:'Четверг, должно получиться.'}]},
+{id:'roommate',topic:'Конфликт с соседом по квартире',level:'grammar',lines:[
+ {speaker:'Zoé',fr:'On peut parler de la vaisselle qui traîne ?',ru:'Можем поговорить про посуду, которая валяется?'},
+ {speaker:'Max',fr:'Je comptais m\u2019en occuper ce soir.',ru:'Я собирался заняться этим вечером.'},
+ {speaker:'Zoé',fr:'Tu dis toujours ça et ça reste trois jours.',ru:'Ты всегда так говоришь, а она стоит три дня.'},
+ {speaker:'Max',fr:'D\u2019accord, je le fais maintenant, promis.',ru:'Хорошо, сейчас сделаю, обещаю.'}]},
+{id:'praise_meal',topic:'Похвала блюда',level:'beg',lines:[
+ {speaker:'Zoé',fr:'C\u2019est toi qui as préparé ça ? C\u2019est délicieux.',ru:'Это ты приготовил? Очень вкусно.'},
+ {speaker:'Max',fr:'Merci, une vieille recette de ma grand-mère.',ru:'Спасибо, старый рецепт моей бабушки.'},
+ {speaker:'Zoé',fr:'Tu me donnes la recette un jour ?',ru:'Дашь мне рецепт как-нибудь?'},
+ {speaker:'Max',fr:'Avec plaisir, mais elle est un peu compliquée.',ru:'С удовольствием, но он немного сложный.'}]},
+{id:'pets',topic:'Обсуждение питомцев',level:'forgot',lines:[
+ {speaker:'Max',fr:'Ton chat, il s\u2019appelle comment déjà ?',ru:'Как зовут твоего кота, напомни?'},
+ {speaker:'Zoé',fr:'Biscuit. Il est increvable, il dort vingt heures par jour.',ru:'Бисквит. Он неубиваемый, спит двадцать часов в сутки.'},
+ {speaker:'Max',fr:'Le mien fait pareil, sauf la nuit où il devient fou.',ru:'Мой так же, кроме ночи, когда он с ума сходит.'},
+ {speaker:'Zoé',fr:'Classique des chats, ils inversent tout.',ru:'Классика котов, всё наоборот.'}]},
+{id:'promotion',topic:'Поздравление с повышением',level:'grammar',lines:[
+ {speaker:'Zoé',fr:'J\u2019ai appris pour ta promotion, félicitations !',ru:'Слышала про твоё повышение, поздравляю!'},
+ {speaker:'Max',fr:'Merci, ça fait plaisir. Beaucoup de travail derrière.',ru:'Спасибо, приятно. Много работы за этим стоит.'},
+ {speaker:'Zoé',fr:'Tu l\u2019as bien mérité, on fête ça quand ?',ru:'Ты заслужил, когда отмечаем?'},
+ {speaker:'Max',fr:'Ce week-end si t\u2019es libre.',ru:'В эти выходные, если свободна.'}]},
+{id:'weekend_plans',topic:'Планы на выходные',level:'beg',lines:[
+ {speaker:'Max',fr:'T\u2019as prévu quoi pour le week-end ?',ru:'Что запланировал на выходные?'},
+ {speaker:'Zoé',fr:'Rien de spécial, peut-être une rando si le temps le permet.',ru:'Ничего особенного, может поход, если погода позволит.'},
+ {speaker:'Max',fr:'Ça te dit qu\u2019on y aille ensemble ?',ru:'Пойдём вместе?'},
+ {speaker:'Zoé',fr:'Carrément, ça change du canapé.',ru:'Точно, разнообразие после дивана.'}]},
+{id:'passport',topic:'Паспортный контроль',level:'grammar',lines:[
+ {speaker:'Agent',fr:'Motif de votre voyage ?',ru:'Цель поездки?'},
+ {speaker:'Zoé',fr:'Tourisme, je reste une semaine.',ru:'Туризм, останусь на неделю.'},
+ {speaker:'Agent',fr:'Vous logez où ?',ru:'Где остановитесь?'},
+ {speaker:'Zoé',fr:'Dans un hôtel près du centre-ville.',ru:'В отеле недалеко от центра.'}]},
+{id:'bank',topic:'В банке',level:'grammar',lines:[
+ {speaker:'Zoé',fr:'Bonjour, je voudrais ouvrir un compte.',ru:'Здравствуйте, хочу открыть счёт.'},
+ {speaker:'Conseiller',fr:'Bien sûr, vous avez une pièce d\u2019identité ?',ru:'Конечно, у вас есть документ?'},
+ {speaker:'Zoé',fr:'Oui, la voici.',ru:'Да, вот.'},
+ {speaker:'Conseiller',fr:'Parfait, ça prendra une vingtaine de minutes.',ru:'Отлично, это займёт минут двадцать.'}]}
+];
+
+async function callLumiAI(userText, kickoff){
+var liveMsgs=document.getElementById('liveMsgs');
+var uRow=document.createElement('div'); uRow.className='line right';
+uRow.innerHTML='<div class="msg right"><p style="margin:0">'+userText.replace(/</g,'&lt;')+'</p></div>';
+liveMsgs.appendChild(uRow); liveMsgs.scrollTop=liveMsgs.scrollHeight;
+if(!kickoff){ liveHistory.push({role:'user',content:userText}); }
+if(!CONFIG.apiBase){
+var note=document.getElementById('chatTopicsNote'); if(note) note.style.display='block';
+var errRow=document.createElement('div'); errRow.className='line';
+errRow.innerHTML='<div class="msg left"><p style="margin:0;color:var(--text-secondary);font-size:12.5px">Бэкенд не подключён (CONFIG.apiBase пуст). Задай адрес своего сервера в коде, чтобы Люми отвечала по-настоящему — см. server.js.</p></div>';
+liveMsgs.appendChild(errRow); liveMsgs.scrollTop=liveMsgs.scrollHeight;
+return;
+}
+var typing=document.createElement('div'); typing.className='line';
+typing.innerHTML='<div class="msg left typing"><span></span><span></span><span></span></div>';
+liveMsgs.appendChild(typing); liveMsgs.scrollTop=liveMsgs.scrollHeight;
+try{
+var res=await fetch(CONFIG.apiBase+'/api/chat', {
+method:'POST', headers:{'Content-Type':'application/json'},
+body: JSON.stringify({messages: liveHistory, level: state.level})
+});
+var data=await res.json();
+typing.remove();
+var reply=data.reply || 'Хм, не получила ответа. Попробуй ещё раз.';
+liveHistory.push({role:'assistant',content:reply});
+var aRow=document.createElement('div'); aRow.className='line';
+aRow.innerHTML='<div class="msg left"><p style="margin:0;white-space:pre-wrap">'+reply.replace(/</g,'&lt;')+'</p></div>';
+liveMsgs.appendChild(aRow); liveMsgs.scrollTop=liveMsgs.scrollHeight;
+}catch(e){
+typing.remove();
+var eRow=document.createElement('div'); eRow.className='line';
+eRow.innerHTML='<div class="msg left"><p style="margin:0;color:var(--text-secondary);font-size:12.5px">Не получилось связаться с сервером. Проверь, что он запущен и CONFIG.apiBase указан верно.</p></div>';
+liveMsgs.appendChild(eRow); liveMsgs.scrollTop=liveMsgs.scrollHeight;
+}
+}
+function openLiveChat(kickoffText){
+liveHistory=[{role:'user',content:kickoffText}];
+document.getElementById('liveMsgs').innerHTML='';
+show('livechat');
+callLumiAI(kickoffText, true);
+}
+
+function show(id){ document.querySelectorAll('.step').forEach(function(s){s.classList.remove('active');}); document.getElementById('screen-'+id).classList.add('active'); window.scrollTo(0,0); }
+function renderQ1(){
+var box=document.getElementById('quiz-content'); box.innerHTML='';
+var h=document.createElement('h2'); h.textContent='Какой у тебя уровень французского?'; h.style.cssText='text-align:center;font-size:18px'; box.appendChild(h);
+var wrap=document.createElement('div'); wrap.style.marginTop='1rem';
+LEVELS.forEach(function(o){ var b=document.createElement('button'); b.type='button'; b.className='qbtn'; b.textContent=o.l; if(state.level===o.v) b.classList.add('sel');
+b.addEventListener('click', function(v){return function(){ state.level=v; show('thinking'); setTimeout(function(){ renderHub(); show('hub'); },700); };}(o.v)); wrap.appendChild(b); });
+box.appendChild(wrap);
+}
+function poseSvg(sc){ return '<svg viewBox="0 0 64 64" width="100%" height="100%"><circle cx="32" cy="34" r="24" fill="var(--seal)"/><circle cx="25" cy="30" r="3" fill="#20303c"/><circle cx="39" cy="30" r="3" fill="#20303c"/><ellipse cx="32" cy="38" rx="3" ry="2" fill="#20303c"/><circle cx="48" cy="16" r="7" fill="'+sc.color+'"/></svg>'; }
+function renderCollection(){ var row=document.getElementById('collectRow'); row.innerHTML=''; SCENES.forEach(function(sc){ var w=document.createElement('div'); w.className='cardw'+(earned.indexOf(sc.v)>-1?' got':''); w.innerHTML=poseSvg(sc); row.appendChild(w); }); }
+function renderHub(){
+renderCollection();
+document.getElementById('hubMsg').textContent = earned.length===0 ? 'Выбери первую сцену — я жду!' : 'Пройдено '+earned.length+' из '+SCENES.length+'. Продолжаем?';
+var grid=document.getElementById('hubGrid'); grid.innerHTML='';
+SCENES.forEach(function(sc){
+var done=earned.indexOf(sc.v)>-1;
+var c=document.createElement('div'); c.className='hubcard'+(done?' done':'');
+c.innerHTML='<div class="hicon"><i class="ti '+sc.icon+'" aria-hidden="true"></i></div><p>'+sc.scene+'</p>'+(done?'<i class="ti ti-check chk" aria-hidden="true"></i>':'');
+c.addEventListener('click', function(){ startScene(sc); });
+grid.appendChild(c);
+});
+}
+function renderChatTopics(){
+var note=document.getElementById('chatTopicsNote'); if(note) note.style.display = CONFIG.apiBase ? 'none' : 'block';
+var grid=document.getElementById('chatGrid'); grid.innerHTML='';
+CHAT_TOPICS.forEach(function(tp){
+var c=document.createElement('div'); c.className='hubcard';
+c.innerHTML='<div class="hicon"><i class="ti '+tp.icon+'" aria-hidden="true"></i></div><p>'+tp.l+'</p>';
+c.addEventListener('click', function(){ openLiveChat('Давай поболтаем на тему «'+tp.l+'». Будь Люми, лёгкий и весёлый тон на французском под мой уровень, с переводом рядом.'); });
+grid.appendChild(c);
+});
+}
+function renderPhrasebook(){
+var list=document.getElementById('pbList'); list.innerHTML='';
+PHRASEBOOK.forEach(function(d){
+var card=document.createElement('div'); card.className='phrase-card';
+card.innerHTML='<p>'+d.topic+'</p><span class="plevel">'+(LEVEL_LABEL[d.level]||d.level)+'</span>';
+card.addEventListener('click', function(){ openPhrase(d); });
+list.appendChild(card);
+});
+}
+function openPhrase(d){
+document.getElementById('phTitle').textContent = d.topic;
+var wrap=document.getElementById('phLines'); wrap.innerHTML='';
+d.lines.forEach(function(ln){
+var row=document.createElement('div'); row.className='pline';
+row.innerHTML='<div><p class="fr">'+ln.fr+'</p><p class="ru">'+ln.ru+'</p></div>';
+var btn=document.createElement('button'); btn.className='playbtn'; btn.style.marginLeft='0';
+btn.innerHTML='<i class="ti ti-volume" aria-hidden="true" style="font-size:11px"></i>';
+btn.addEventListener('click', function(){ speak(ln.fr); });
+row.appendChild(btn);
+wrap.appendChild(row);
+});
+show('phrase');
+}
+function openActionSheet(){ document.getElementById('sealSheetOverlay').classList.add('show'); }
+function closeActionSheet(){ document.getElementById('sealSheetOverlay').classList.remove('show'); }
+function renderProfile(){
+document.getElementById('statScenes').textContent = earned.length+'/'+SCENES.length;
+document.getElementById('statScore').textContent = score.you+':'+score.lumi;
+document.getElementById('statWords').textContent = favorites.length;
+document.getElementById('statGames').textContent = gamesPlayed;
+document.getElementById('profileMsg').textContent = earned.length===0 ? 'Пока рано подводить итоги — начни с любой сцены!' : (score.you>=score.lumi ? 'Ты выигрываешь у Люми — она впечатлена!' : 'Люми пока впереди, но ты нагонишь!');
+}
+function avatarSvg(isMax){
+if(isMax) return '<circle cx="32" cy="32" r="26" fill="var(--seal)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/>';
+return '<circle cx="32" cy="32" r="26" fill="var(--seal2)"/><circle cx="24" cy="28" r="3" fill="#20303c"/><circle cx="40" cy="28" r="3" fill="#20303c"/><ellipse cx="32" cy="36" rx="3" ry="2" fill="#20303c"/><ellipse cx="32" cy="12" rx="9" ry="5" fill="var(--sun)"/>';
+}
+function lineText(line){ return line.segs.map(function(s){return s.w!==undefined?s.w:s.t;}).join(''); }
+function speak(text){ try{ if(!window.speechSynthesis) return; window.speechSynthesis.cancel(); var u=new SpeechSynthesisUtterance(text.replace(/\u2019/g,"'")); u.lang='fr-FR'; u.rate=0.92; window.speechSynthesis.speak(u); }catch(e){} }
+function buildLine(line){
+var row=document.createElement('div'); row.className='line'+(line.sp==='Max'?' right':'');
+var av=document.createElement('svg'); av.setAttribute('viewBox','0 0 64 64'); av.setAttribute('class','av'); av.innerHTML=avatarSvg(line.sp==='Max');
+av.addEventListener('click', function(){ openPlayMode('dialogue'); });
+var msg=document.createElement('div'); msg.className='msg '+(line.sp==='Max'?'right':'left');
+var who=document.createElement('p'); who.className='who'; who.textContent=line.sp; msg.appendChild(who);
+var pRow=document.createElement('div'); pRow.style.display='flex'; pRow.style.alignItems='flex-end'; pRow.style.gap='5px';
+var p=document.createElement('p'); p.style.margin='0';
+line.segs.forEach(function(seg){
+if(seg.t!==undefined){ p.appendChild(document.createTextNode(seg.t)); return; }
+var s=document.createElement('span'); s.className='tword'+(seg.tag?(' tag-'+seg.tag):''); s.textContent=seg.w;
+s.addEventListener('click', function(){ showWord(seg); }); p.appendChild(s);
+});
+var play=document.createElement('button'); play.className='playbtn'; play.innerHTML='<i class="ti ti-volume" aria-hidden="true" style="font-size:11px"></i>';
+play.addEventListener('click', function(e){ e.stopPropagation(); speak(lineText(line)); });
+pRow.appendChild(p); pRow.appendChild(play); msg.appendChild(pRow);
+row.appendChild(av); row.appendChild(msg);
+return row;
+}
+function showTyping(isRight){
+var dbody=document.getElementById('dbody'); var row=document.createElement('div'); row.className='line'+(isRight?' right':'');
+row.innerHTML='<div class="msg '+(isRight?'right':'left')+' typing"><span></span><span></span><span></span></div>';
+dbody.appendChild(row); dbody.scrollTop=dbody.scrollHeight; return row;
+}
+function showContinueGate(){
+var f=document.getElementById('dfoot');
+f.innerHTML='<button class="btn-primary" id="continueBtn">Продолжить сцену →</button>';
+document.getElementById('continueBtn').addEventListener('click', function(){
+f.innerHTML='<p class="grammar-hint">Нажми на слово — перевод. Кружок динамика — озвучка.</p>';
+playNext();
+});
+}
+function playNext(){
+if(dIndex+1>=curDialogue.length){ runExercises(); return; }
+var next=curDialogue[dIndex+1]; var typingRow=showTyping(next.sp==='Max');
+playTimer=setTimeout(function(){
+typingRow.remove(); dIndex++;
+var ln=curDialogue[dIndex];
+document.getElementById('dbody').appendChild(buildLine(ln));
+document.getElementById('dbody').scrollTop=document.getElementById('dbody').scrollHeight;
+if(ln.phaseEnd){ showContinueGate(); }
+else { playTimer=setTimeout(playNext,850); }
+},600);
+}
+function updateScoreChip(){ var chip=document.getElementById('scoreChip'); chip.style.display='inline-block'; chip.textContent='Ты '+score.you+':'+score.lumi+' Люми'; }
+function runExercises(){
+var list=EXERCISES[curReg.v]||[]; var f=document.getElementById('dfoot');
+sceneScore={you:0,lumi:0};
+if(!list.length){ finishDialogue(); return; }
+var qi=0;
+function renderQ(){
+if(qi>=list.length){ finishDialogue(); return; }
+var ex=list[qi];
+f.innerHTML='<p class="grammar-hint" style="margin-bottom:5px">Мини-упражнение '+(qi+1)+'/'+list.length+'</p><div class="exq"><p>'+ex.q+'</p><div id="exopts"></div></div>';
+var opts=document.getElementById('exopts');
+ex.options.forEach(function(opt){
+var b=document.createElement('button'); b.className='exopt'; b.textContent=opt;
+b.addEventListener('click', function(){
+document.querySelectorAll('.exopt').forEach(function(x){ x.classList.add('locked'); });
+if(opt===ex.correct){ b.classList.add('right'); score.you++; sceneScore.you++; }
+else { b.classList.add('wrong'); score.lumi++; sceneScore.lumi++; Array.prototype.forEach.call(document.querySelectorAll('.exopt'),function(x){ if(x.textContent===ex.correct) x.classList.add('right'); }); }
+updateScoreChip();
+setTimeout(function(){ qi++; renderQ(); }, 1100);
+});
+opts.appendChild(b);
+});
+}
+renderQ();
+}
+function allWords(){
+var pool=[];
+Object.keys(DIALOGUES).forEach(function(k){
+DIALOGUES[k].forEach(function(line){ line.segs.forEach(function(s){ if(s.w!==undefined && s.tr) pool.push({w:s.w,tr:s.tr}); }); });
+});
+return pool;
+}
+function playMiniGame(){
+var sceneWords=[]; curDialogue.forEach(function(line){ line.segs.forEach(function(s){ if(s.w!==undefined && s.tr) sceneWords.push({w:s.w,tr:s.tr}); }); });
+if(!sceneWords.length) sceneWords=allWords();
+var pool=allWords();
+var rounds=Math.min(2, sceneWords.length);
+var ri=0;
+function shuffle(arr){ return arr.slice().sort(function(){return Math.random()-0.5;}); }
+function round(){
+if(ri>=rounds){ document.getElementById('gamePrompt').textContent=''; document.getElementById('gameChips').innerHTML=''; document.getElementById('gameResult').textContent='Игра окончена — Люми гордится тобой !'; return; }
+var correct=sceneWords[ri];
+var distract=shuffle(pool.filter(function(p){return p.w!==correct.w;})).slice(0,2);
+var options=shuffle([correct].concat(distract));
+document.getElementById('gamePrompt').textContent='«'+correct.tr+'»';
+document.getElementById('gameResult').textContent='';
+var chips=document.getElementById('gameChips'); chips.innerHTML='';
+options.forEach(function(o){
+var b=document.createElement('button'); b.className='gamechip'; b.textContent=o.w;
+b.addEventListener('click', function(){
+document.querySelectorAll('.gamechip').forEach(function(x){x.classList.add('locked');});
+gamesPlayed++;
+if(o.w===correct.w){ b.classList.add('right'); document.getElementById('gameResult').textContent='Верно !'; score.you++; }
+else { b.classList.add('wrong'); Array.prototype.forEach.call(document.querySelectorAll('.gamechip'),function(x){ if(x.textContent===correct.w) x.classList.add('right'); }); document.getElementById('gameResult').textContent='Правильный ответ — '+correct.w; score.lumi++; }
+setTimeout(function(){ ri++; round(); }, 1100);
+});
+chips.appendChild(b);
+});
+}
+round();
+}
+function finishDialogue(){
+if(earned.indexOf(curReg.v)===-1) earned.push(curReg.v);
+document.getElementById('recapTitle').textContent='Bravo !';
+document.getElementById('recapText').textContent='Сцена «'+curReg.scene+'» пройдена. Карточка в коллекции.';
+document.getElementById('recapScore').textContent='Ты '+sceneScore.you+' : '+sceneScore.lumi+' Люми';
+show('recap');
+document.getElementById('faceRecap').classList.add('excited');
+setTimeout(function(){ document.getElementById('faceRecap').classList.remove('excited'); },1600);
+playMiniGame();
+}
+function showWord(seg){
+var f=document.getElementById('dfoot'); var starred=favorites.some(function(x){return x.w===seg.w;});
+f.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between"><p class="grammar-word">'+seg.w+'</p><button class="starbtn'+(starred?' on':'')+'" id="starBtn"><i class="ti '+(starred?'ti-star-filled':'ti-star')+'" aria-hidden="true"></i></button></div>'+
+(seg.tag?'<span class="grammar-tag">'+TAG_LABEL[seg.tag]+'</span>':'')+
+'<p class="grammar-hint" style="margin-top:4px">'+seg.tr+'</p>';
+document.getElementById('starBtn').addEventListener('click', function(){
+var idx=favorites.findIndex(function(x){return x.w===seg.w;});
+if(idx>-1) favorites.splice(idx,1); else favorites.push({w:seg.w,tr:seg.tr});
+document.getElementById('favCount').textContent=favorites.length;
+showWord(seg);
+});
+}
+function renderFavorites(){
+var list=document.getElementById('favList'); list.innerHTML='';
+if(!favorites.length){ list.innerHTML='<p class="grammar-hint">Сохраняй слова звёздочкой на разборе — они появятся здесь.</p>'; return; }
+favorites.forEach(function(item){
+var card=document.createElement('div'); card.className='fcard'; var shown=false;
+var word=document.createElement('p'); word.style.cssText='font-size:15px;font-weight:700;margin:0'; word.textContent=item.w;
+var tr=document.createElement('p'); tr.style.cssText='font-size:12.5px;color:var(--text-secondary);margin:6px 0 0;visibility:hidden'; tr.textContent=item.tr;
+card.appendChild(word); card.appendChild(tr);
+card.addEventListener('click', function(){ shown=!shown; tr.style.visibility=shown?'visible':'hidden'; });
+list.appendChild(card);
+});
+var practiceBtn=document.createElement('button'); practiceBtn.className='btn-primary'; practiceBtn.style.marginTop='6px'; practiceBtn.textContent='Диалог с этими словами';
+practiceBtn.addEventListener('click', function(){ openLiveChat('Сделай короткий диалог на французском, используя эти слова: '+favorites.map(function(f){return f.w;}).join(', ')+'. С переводом рядом.'); });
+list.appendChild(practiceBtn);
+}
+function openPlayMode(fromScreen){ returnScreen=fromScreen||'welcome'; openActionSheet(); }
+function startScene(sc){
+if(playTimer) clearTimeout(playTimer);
+if(window.speechSynthesis) window.speechSynthesis.cancel();
+curReg=sc; curDialogue=DIALOGUES[sc.v]||DIALOGUES.casual; dIndex=-1;
+document.getElementById('dTitle').textContent=sc.scene;
+document.getElementById('dLevel').textContent=LEVEL_LABEL[state.level];
+document.getElementById('dbody').innerHTML='';
+document.getElementById('dfoot').innerHTML='<p class="grammar-hint">Нажми на слово — перевод. Кружок динамика — озвучка.</p>';
+document.getElementById('scoreChip').style.display='none';
+show('dialogue'); playNext();
+}
+document.getElementById('startBtn').addEventListener('click', function(){ show('quiz'); renderQ1(); });
+document.getElementById('hubHome').addEventListener('click', function(){ show('welcome'); });
+document.getElementById('hubProfile').addEventListener('click', function(){ renderProfile(); show('profile'); });
+document.getElementById('hubChat').addEventListener('click', function(){ returnScreen='hub'; renderChatTopics(); show('chattopics'); });
+document.getElementById('hubPhrasebook').addEventListener('click', function(){ renderPhrasebook(); show('phrasebook'); });
+document.getElementById('pbBack').addEventListener('click', function(){ show('hub'); });
+document.getElementById('phBack').addEventListener('click', function(){ show('phrasebook'); });
+document.getElementById('profileBack').addEventListener('click', function(){ show('hub'); });
+document.getElementById('profileToHub').addEventListener('click', function(){ renderHub(); show('hub'); });
+document.getElementById('chatBack').addEventListener('click', function(){ if(returnScreen==='dialogue'){ show('dialogue'); } else { renderHub(); show(returnScreen==='welcome'?'welcome':'hub'); } });
+document.getElementById('liveBack').addEventListener('click', function(){ if(window.speechSynthesis) window.speechSynthesis.cancel(); show(returnScreen==='dialogue'?'dialogue':(returnScreen==='welcome'?'welcome':'hub')); });
+document.getElementById('liveSend').addEventListener('click', sendLive);
+document.getElementById('liveInput').addEventListener('keydown', function(e){ if(e.key==='Enter') sendLive(); });
+function sendLive(){ var v=document.getElementById('liveInput').value.trim(); if(!v) return; document.getElementById('liveInput').value=''; callLumiAI(v,false); }
+document.getElementById('sealSheetOverlay').addEventListener('click', function(e){ if(e.target===this) closeActionSheet(); });
+document.getElementById('actChat').addEventListener('click', function(){ closeActionSheet(); renderChatTopics(); show('chattopics'); });
+document.getElementById('actJoke').addEventListener('click', function(){ closeActionSheet(); openLiveChat('Расскажи мне короткий анекдот или забавную историю на французском, с переводом рядом.'); });
+document.getElementById('actGrammar').addEventListener('click', function(){ closeActionSheet(); openLiveChat('Объясни мне какое-нибудь полезное правило французской грамматики простыми словами, с примерами, под мой уровень.'); });
+document.getElementById('actPraise').addEventListener('click', function(){ closeActionSheet(); openLiveChat('Похвали меня за то, что я учу французский, и подбодри продолжать — по-французски с переводом.'); });
+document.getElementById('actProfile2').addEventListener('click', function(){ closeActionSheet(); renderProfile(); show('profile'); });
+document.getElementById('dBack').addEventListener('click', function(){ if(playTimer) clearTimeout(playTimer); if(window.speechSynthesis) window.speechSynthesis.cancel(); renderHub(); show('hub'); });
+document.getElementById('favToggle').addEventListener('click', function(){ renderFavorites(); show('favorites'); });
+document.getElementById('favBack2').addEventListener('click', function(){ show('dialogue'); });
+document.getElementById('faceThinking').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('thinking'); });
+document.getElementById('faceQuiz').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('quiz'); });
+document.getElementById('faceHub').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('hub'); });
+document.getElementById('faceDialogue').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('dialogue'); });
+document.getElementById('faceRecap').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('recap'); });
+document.getElementById('faceProfile').addEventListener('click', function(e){ e.stopPropagation(); openPlayMode('profile'); });
+document.getElementById('recapReplay').addEventListener('click', function(){ startScene(curReg); });
+document.getElementById('recapHub').addEventListener('click', function(){ renderHub(); show('hub'); });
+document.getElementById('recapProfile').addEventListener('click', function(){ renderProfile(); show('profile'); });
+var sealBusy=false;
+document.getElementById('sealTap').addEventListener('click', function(){
+if(sealBusy) return; sealBusy=true;
+var seal=document.getElementById('sealTap'); var bubble=document.getElementById('sealBubble');
+seal.classList.add('excited'); bubble.classList.remove('show'); void bubble.offsetWidth; bubble.classList.add('show');
+setTimeout(function(){ seal.classList.remove('excited'); sealBusy=false; },1600);
+});
+})();
+</script>
+</body>
+</html>
